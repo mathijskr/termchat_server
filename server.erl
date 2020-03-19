@@ -1,18 +1,53 @@
 -module(server).
--behaviour(gen_server).
+-export([start/0]).
 
--export([start_link/0, init/1, handle_call/3, handle_cast/2, add/1]).
+-define(PORT, 31031).
 
-start_link() -> gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+start() ->
+    {ok, Listen} = gen_tcp:listen(?PORT, [{active, false}, binary]),
+    listen(Listen).
 
-init([]) -> {ok, []}.
+listen(Listen) ->
+    {ok, Socket} = gen_tcp:accept(Listen),
+    read_socket(Socket),
+    gen_tcp:close(Listen).
 
-handle_call(Msg, _From, State) ->
-    NewState = State ++ [Msg],
-    {reply, NewState, NewState}.
-handle_cast(Msg, State) ->
-    NewState = State ++ [Msg],
-    {noreply, NewState}.
+login(<<"joe">>, <<"secret">>) ->
+    ok.
 
-add(Msg) ->
-    gen_server:call(?MODULE, Msg).
+read_name(Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    receive
+        {tcp, Socket, <<"name=", Name/binary>>} ->
+            gen_tcp:send(Socket, "ok\n"),
+            Name
+    end.
+
+read_pass(Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    receive
+        {tcp, Socket, <<"pass=", Pass/binary>>} ->
+            gen_tcp:send(Socket, "ok\n"),
+            Pass
+    end.
+
+read_socket(Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    receive
+            {tcp, Socket, <<"quit", _/binary>>} ->
+                io:fwrite("quitted"),
+                gen_tcp:close(Socket);
+
+            {tcp, Socket, <<"login", _/binary>>} ->
+                io:fwrite("Login"),
+                gen_tcp:send(Socket, "ok\n"),
+                Name = read_name(Socket),
+                Pass = read_pass(Socket),
+                ok = login(Name, Pass),
+                gen_tcp:send(Socket, "logged in\n"),
+                read_socket(Socket);
+
+            {tcp, Socket, _} ->
+                io:fwrite("Geen geldig commando"),
+                read_socket(Socket)
+    end.
