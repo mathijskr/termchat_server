@@ -1,7 +1,7 @@
-%%----------------------------------------------------------------------
+%%%----------------------------------------------------------------------
 %%% Database module. Stores user credentials and messages sent between users.
 %%% Defines functions for inserting and retrieving information from the database.
-%%----------------------------------------------------------------------
+%%%----------------------------------------------------------------------
 
 -module(database).
 -export([install/1, insert_user/2, insert_message/3, get_password/1, read_chat/2]).
