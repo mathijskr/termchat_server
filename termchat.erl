@@ -6,6 +6,7 @@
 -export([install/0, start_link/0, init/1, listen/1, spawn_listeners/1]).
 
 -define(PORT, 31031).
+-define(DELIMITER, "\x00").
 -define(ASCII_DELIMITER, 0).
 
 -behaviour(supervisor).
@@ -66,8 +67,6 @@ spawn_listeners(N) ->
 %%----------------------------------------------------------------------
 listen(Listen) ->
     {ok, Socket} = gen_tcp:accept(Listen),
-    io:fwrite("JO"),
-    gen_tcp:send(Socket, "hallo\n"),
     read_socket(Socket),
     gen_tcp:close(Listen),
     supervisor:start_child(?MODULE, []).
@@ -99,50 +98,59 @@ parse_message(<<H, T/binary>>, Acc) ->
     parse_message(T, <<Acc/binary, H>>).
 
 %%----------------------------------------------------------------------
-%% Function:    read_credentials/1
+%% Function:    parse_credentials/1
 %% Description: Reads the username and password from a bitstring.
 %% Args:        A bitstring containing name=<username>?ASCII_DELIMITERpass=<password>.
 %% Returns:     A tuple containing username and password and the rest of the bitstring.
 %%----------------------------------------------------------------------
-read_credentials(Credentials) ->
-    {Name, NameRest} = read_name(Credentials),
-    {Pass, PassRest} = read_pass(NameRest),
+parse_credentials(Credentials) ->
+    {Name, NameRest} = parse_name(Credentials),
+    {Pass, PassRest} = parse_pass(NameRest),
     {Name, Pass, PassRest}.
 
 %%----------------------------------------------------------------------
-%% Function:    read_name/1
+%% Function:    parse_name/1
 %% Description: Reads the username from a bitstring.
 %% Args:        A bistring beginning with name=<username>.
 %% Returns:     A tuple containing a username and the rest of the bitstring.
 %%----------------------------------------------------------------------
-read_name(<<"name=", Bitstring/binary>>) ->
+parse_name(<<"name=", Bitstring/binary>>) ->
     parse_message(Bitstring, <<>>).
 
 %%----------------------------------------------------------------------
-%% Function:    read_pass/1
+%% Function:    parse_pass/1
 %% Description: Reads the password from a bitstring.
 %% Args:        A bitstring beginning with pass=<password>.
 %% Returns:     A tuple containing a password and the rest of the bitstring.
 %%----------------------------------------------------------------------
-read_pass(<<"pass=", Bitstring/binary>>) ->
+parse_pass(<<"pass=", Bitstring/binary>>) ->
     parse_message(Bitstring, <<>>).
 
 %%----------------------------------------------------------------------
-%% Function:    read_body/1
+%% Function:    parse_body/1
 %% Description: Reads the body of a message from a bitstring.
 %% Args:        A bitstring beginning with body=<body>.
 %% Returns:     A tuple containing the body of a message and the rest of the bitstring.
 %%----------------------------------------------------------------------
-read_body(<<"body=", Bitstring/binary>>) ->
+parse_body(<<"body=", Bitstring/binary>>) ->
     parse_message(Bitstring, <<>>).
 
 %%----------------------------------------------------------------------
-%% Function:    read_receiver/1
+%% Function:    parse_contact/1
+%% Description:
+%% Args:
+%% Returns:
+%% ----------------------------------------------------------------------
+parse_contact(<<"contact=", Bitstring/binary>>) ->
+    parse_message(Bitstring, <<>>).
+
+%%----------------------------------------------------------------------
+%% Function:    parse_receiver/1
 %% Description: Reads the receiver of a message from a bitstring.
 %% Args:        A bitstring beginning with receiver=<receiver>.
 %% Returns:     A tuple containing the receiver of a message and the rest of the bitstring.
 %%----------------------------------------------------------------------
-read_receiver(<<"receiver=", Bitstring/binary>>) ->
+parse_receiver(<<"receiver=", Bitstring/binary>>) ->
     parse_message(Bitstring, <<>>).
 
 %%----------------------------------------------------------------------
@@ -153,9 +161,9 @@ read_receiver(<<"receiver=", Bitstring/binary>>) ->
 %% Returns:
 %%----------------------------------------------------------------------
 save_message(Message) ->
-    {Name, Pass, RestCredentials} = read_credentials(Message),
-    {Receiver, RestReceiver}      = read_receiver(RestCredentials),
-    {Body, _}                     = read_body(RestReceiver),
+    {Name, Pass, RestCredentials} = parse_credentials(Message),
+    {Receiver, RestReceiver}      = parse_receiver(RestCredentials),
+    {Body, _}                     = parse_body(RestReceiver),
     case login(Name, Pass) of
         ok        -> database:insert_message(Receiver, Name, Body),
                      ok;
@@ -176,16 +184,53 @@ create_account(Name, Pass) ->
     end.
 
 %%----------------------------------------------------------------------
+%% Function:    read_chat/1
+%% Description:
+%% Args:
+%% Returns:
+%% ----------------------------------------------------------------------
+read_chat(Packet) ->
+    {Name, Pass, RestCredentials} = parse_credentials(Packet),
+    {Contact, _}                  = parse_contact(RestCredentials),
+    case login(Name, Pass) of
+        ok        -> database:read_chat(Name, Contact);
+        undefined -> {error, invalid_credentials}
+    end.
+
+%%----------------------------------------------------------------------
+%% Function:
+%% Description:
+%% Args:
+%% Returns:
+%% ----------------------------------------------------------------------
+read_contacts(Credentials) ->
+    {Name, Pass, _} = parse_credentials(Credentials),
+    case login(Name, Pass) of
+        ok        -> database:get_contacts(Name);
+        undefined -> {error, invalid_credentials}
+    end.
+
+%%----------------------------------------------------------------------
+%% Function:    tcp_format_list/1
+%% Description:
+%% Args:
+%% Returns:
+%% ----------------------------------------------------------------------
+tcp_format_list(List) ->
+    Append = fun({termchat_message, _, _, Msg, _}, Acc) ->
+                Acc ++ Msg ++ "\n"
+    end,
+    lists:foldl(Append, "", List).
+
+%%----------------------------------------------------------------------
 %% Function:    read_socket/1
-%% Description: Reads commands: quit, login or signup from a socket.
+%% Description:
 %% Args:        The socket to read from.
 %% Returns:     ok.
 %%----------------------------------------------------------------------
 read_socket(Socket) ->
     inet:setopts(Socket, [{active, once}]),
     receive
-        {tcp, Socket, <<"test", _/binary>>} ->
-            gen_tcp:send(Socket, "jojo\n");
         {tcp, Socket, <<"quit:", _/binary>>} ->
             ok;
 
@@ -193,17 +238,24 @@ read_socket(Socket) ->
             case save_message(Message) of
                 ok                           -> gen_tcp:send(Socket, "sent\n");
                 {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n")
-            end,
-            read_socket(Socket);
+            end;
+
+        {tcp, Socket, <<"contacts:", Credentials/binary>>} ->
+            case read_contacts(Credentials) of
+                {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
+                Contacts                     -> gen_tcp:send(Socket, tcp_format_list(Contacts))
+            end;
+
+        {tcp, Socket, <<"read:", Packet/binary>>} ->
+            case read_chat(Packet) of
+                {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
+                Chat                         -> gen_tcp:send(Socket, tcp_format_list(Chat))
+            end;
 
         {tcp, Socket, <<"signup:", Credentials/binary>>} ->
-            {Name, Pass, _} = read_credentials(Credentials),
+            {Name, Pass, _} = parse_credentials(Credentials),
             case create_account(Name, Pass) of
                 ok -> gen_tcp:send(Socket, "account_created\n");
                 _  -> gen_tcp:send(Socket, "username_in_use\n")
-            end,
-            read_socket(Socket);
-
-        {tcp, Socket, _} ->
-            read_socket(Socket)
+            end
     end.
