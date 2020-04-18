@@ -236,7 +236,7 @@ read_socket(Socket) ->
 
         {tcp, Socket, <<"send:", Message/binary>>} ->
             case save_message(Message) of
-                ok                           -> gen_tcp:send(Socket, "sent\n");
+                ok                           -> gen_tcp:send(Socket, "message_sent\n");
                 {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n")
             end;
 

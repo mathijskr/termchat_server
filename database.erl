@@ -153,8 +153,8 @@ read_chat(Receiver, Sender) ->
     Read = fun() ->
         mnesia:match_object(
           #termchat_message{
-             receiver=binary_to_list(Receiver),
-             sender=binary_to_list(Sender),
+             receiver=Receiver,
+             sender=Sender,
              body='_',
              timestamp='_'
           }
