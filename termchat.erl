@@ -3,7 +3,7 @@
 %%%----------------------------------------------------------------------
 
 -module(termchat).
--export([install/0, start_link/0, init/1, listen/1, spawn_listeners/1]).
+-export([install/0, start_link/0, init/1, listen/1, spawn_listeners/1, read_chat/1,    tcp_format_chat/1]).
 
 -define(PORT, 31031).
 -define(DELIMITER, "\x00").
@@ -193,7 +193,13 @@ read_chat(Packet) ->
     {Name, Pass, RestCredentials} = parse_credentials(Packet),
     {Contact, _}                  = parse_contact(RestCredentials),
     case login(Name, Pass) of
-        ok        -> database:read_chat(Name, Contact);
+        ok        -> Received = database:read_chat(Name, Contact),
+                     Sent     = database:read_chat(Contact, Name),
+                     Chat     = lists:merge(Received, Sent),
+                     SortFun  = fun({termchat_message, _, _, _, T1}, {termchat_message, _, _, _, T2}) ->
+                        T1 =< T2
+                     end,
+                     lists:sort(SortFun, Chat);
         undefined -> {error, invalid_credentials}
     end.
 
@@ -210,17 +216,23 @@ read_contacts(Credentials) ->
         undefined -> {error, invalid_credentials}
     end.
 
-%%----------------------------------------------------------------------
-%% Function:    tcp_format_list/1
-%% Description:
-%% Args:
-%% Returns:
-%% ----------------------------------------------------------------------
-tcp_format_list(List) ->
-    Append = fun({termchat_message, _, _, Msg, _}, Acc) ->
-                Acc ++ Msg ++ "\n"
+tcp_format_contacts(Contacts) ->
+    Fun = fun(Msg) ->
+       <<Msg/binary, "\x00">>
     end,
-    lists:foldl(Append, "", List).
+    Bin = list_to_binary(lists:map(Fun, Contacts)),
+    <<Bin/binary, "\n">>.
+
+tcp_format_chat(Chat) ->
+    Fun = fun({termchat_message, Receiver, Sender, Body, Timestamp}) ->
+        TimestampBin = integer_to_binary(Timestamp),
+        <<"timestamp=", TimestampBin/binary, ?ASCII_DELIMITER,
+          "receiver=", Receiver/binary, ?ASCII_DELIMITER,
+          "sender=", Sender/binary, ?ASCII_DELIMITER,
+          "body=", Body/binary, ?ASCII_DELIMITER>>
+    end,
+    Bin = list_to_binary(lists:map(Fun, Chat)),
+    <<Bin/binary, "\n">>.
 
 %%----------------------------------------------------------------------
 %% Function:    read_socket/1
@@ -243,13 +255,14 @@ read_socket(Socket) ->
         {tcp, Socket, <<"contacts:", Credentials/binary>>} ->
             case read_contacts(Credentials) of
                 {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
-                Contacts                     -> gen_tcp:send(Socket, tcp_format_list(Contacts))
+                Contacts                     -> io:fwrite(tcp_format_contacts(Contacts)),
+                                                gen_tcp:send(Socket, tcp_format_contacts(Contacts))
             end;
 
         {tcp, Socket, <<"read:", Packet/binary>>} ->
             case read_chat(Packet) of
                 {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
-                Chat                         -> gen_tcp:send(Socket, tcp_format_list(Chat))
+                Chat                         -> gen_tcp:send(Socket, tcp_format_chat(Chat))
             end;
 
         {tcp, Socket, <<"signup:", Credentials/binary>>} ->

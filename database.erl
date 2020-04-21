@@ -121,14 +121,14 @@ get_received_from(Username) ->
                 Sender =:= Username
             ]))
     end,
-    mnesia:activity(transaction, ReadSenders).
+    lists:usort(mnesia:activity(transaction, ReadSenders)).
 
 %%----------------------------------------------------------------------
 %% Function:    get_sended_to/1
 %% Description: Read to who a user has sended messages.
 %% Args:        The username of a user.
 %% Returns:     A list of usernames.
-%% ----------------------------------------------------------------------
+%% ---------------------------------------------------------------------
 get_sended_to(Username) ->
     ReadSenders = fun() ->
         qlc:eval(qlc:q(
@@ -141,7 +141,7 @@ get_sended_to(Username) ->
                 Receiver =:= Username
             ]))
     end,
-    mnesia:activity(transaction, ReadSenders).
+    lists:usort(mnesia:activity(transaction, ReadSenders)).
 
 %%----------------------------------------------------------------------
 %% Function:    read_chat/1
@@ -161,7 +161,4 @@ read_chat(Receiver, Sender) ->
         )
     end,
     {atomic, Inbox} = mnesia:transaction(Read),
-    SortFun = fun({termchat_message, _, _, _, T1}, {termchat_message, _, _, _, T2}) ->
-        T1 =< T2
-    end,
-    lists:sort(SortFun, Inbox).
+    Inbox.
