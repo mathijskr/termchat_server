@@ -4,7 +4,7 @@
 %%%----------------------------------------------------------------------
 
 -module(database).
--export([install/1, insert_user/2, insert_message/3, get_password/1, get_contacts/1, read_chat/2]).
+-export([install/1, insert_user/2, insert_message/3, get_password/1, get_contacts/1, read_chat/3]).
 -include_lib("stdlib/include/qlc.hrl").
 
 -record(termchat_user, {username, password}).
@@ -144,21 +144,23 @@ get_sended_to(Username) ->
     lists:usort(mnesia:activity(transaction, ReadSenders)).
 
 %%----------------------------------------------------------------------
-%% Function:    read_chat/1
-%% Description: Read the messages sent between two users.
-%% Args:        The sender and receiver.
-%% Returns:     All messages sent by sender and received by receiver, sorted by timestamp.
+%% Function:    read_chat/3
+%% Description: Read the messages sent between two users, sent after the specified timestamp.
+%% Args:        The sender and receiver and a timestamp.
+%% Returns:     All messages sent by sender and received by receiver after the timestamp.
 %%----------------------------------------------------------------------
-read_chat(Receiver, Sender) ->
+read_chat(Receiver, Sender, MinTimestamp) ->
     Read = fun() ->
-        mnesia:match_object(
-          #termchat_message{
-             receiver=Receiver,
-             sender=Sender,
-             body='_',
-             timestamp='_'
-          }
-        )
+        qlc:eval(qlc:q(
+            [{R, S, B, T} || #termchat_message{
+                receiver=R,
+                sender=S,
+                body=B,
+                timestamp=T
+            } <- mnesia:table(termchat_message),
+                 T > list_to_integer(binary_to_list(MinTimestamp)),
+                 R =:= Receiver,
+                 S =:= Sender
+            ]))
     end,
-    {atomic, Inbox} = mnesia:transaction(Read),
-    Inbox.
+    mnesia:activity(transaction, Read).
