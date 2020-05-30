@@ -30,6 +30,7 @@ start_link() ->
 init([]) ->
     mnesia:start(),
     {ok, Listen} = gen_tcp:listen(?PORT, [{active, once}, binary]),
+    spawn_link(fun() -> spawn_listeners(10) end),
     {ok, {{simple_one_for_one, 60, 3600},
          [{socket,
           {?MODULE, listen, [Listen]},
@@ -68,8 +69,7 @@ spawn_listeners(N) ->
 listen(Listen) ->
     {ok, Socket} = gen_tcp:accept(Listen),
     read_socket(Socket),
-    gen_tcp:close(Listen),
-    supervisor:start_child(?MODULE, []).
+    spawn_link(fun() -> spawn_listeners(1) end).
 
 %%----------------------------------------------------------------------
 %% Function:    login/2
@@ -221,9 +221,11 @@ tcp_format_chat(Chat) ->
 %% Returns:     ok.
 %%----------------------------------------------------------------------
 read_socket(Socket) ->
+    io:fwrite("receiving"),
     inet:setopts(Socket, [{active, once}]),
     receive
         {tcp, Socket, <<"quit:", _/binary>>} ->
+            gen_tcp:send(Socket, "quit\n"),
             ok;
 
         {tcp, Socket, <<"send:", Message/binary>>} ->
