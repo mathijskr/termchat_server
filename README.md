@@ -1,9 +1,9 @@
 # termchat_server
 
-Prerequisites:
+## Prerequisites:
 * An installation of the erlang interpreter
 
-Usage:
+## Usage:
 * Compile with erl -make
 * Startup erl
 * Install the database with termchat:install()
@@ -11,7 +11,7 @@ Usage:
     * application:start(mnesia)
     * application:start(termchat)
 
-Configuration:
+## Configuration:
 The configuration of the server can be modified in ebin/termchat.app.
 * The number of concurrent listeners can be set by changing "nworkers"
 * The port on which te server listen can be set by changing "port"
