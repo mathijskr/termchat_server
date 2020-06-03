@@ -15,8 +15,9 @@
 %%----------------------------------------------------------------------
 init([]) ->
     {ok, PORT} = application:get_env(port),
+    {ok, WORKERS} = application:get_env(nworkers),
     {ok, Listen} = gen_tcp:listen(PORT, [{active, once}, binary]),
-    spawn_link(fun() -> spawn_listeners(1) end),
+    spawn_link(fun() -> spawn_listeners(WORKERS) end),
     {ok, {{simple_one_for_one, 60, 3600},
          [{socket,
           {termchat_serv, start_link, [Listen]},

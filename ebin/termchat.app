@@ -6,5 +6,7 @@
   {applications, [mnesia]},
   {env,
    [{port, 31031},
-    {delimiter, 0}]}
+    {delimiter, 0},
+    {nworkers, 10}
+   ]}
  ]}.

@@ -10,3 +10,8 @@ Usage:
 * Start the server:
     * application:start(mnesia)
     * application:start(termchat)
+
+Configuration:
+The configuration of the server can be modified in ebin/termchat.app.
+* The number of concurrent listeners can be set by changing "nworkers"
+* The port on which te server listen can be set by changing "port"
