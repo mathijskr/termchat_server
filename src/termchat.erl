@@ -3,22 +3,21 @@
 %%%----------------------------------------------------------------------
 
 -module(termchat).
--export([install/0, start_link/0, init/1, listen/1, spawn_listeners/1, read_chat/1]).
-
--define(PORT, 31031).
--define(DELIMITER, "\x00").
--define(ASCII_DELIMITER, 0).
-
+-behaviour(application).
 -behaviour(supervisor).
+-export([install/0, start/2, stop/1, init/1, listen/1, read_chat/1]).
 
 %%----------------------------------------------------------------------
-%% Function:    start_link/0
+%% Function:    start/2
 %% Description:
 %% Args:
 %% Returns:
 %% ----------------------------------------------------------------------
-start_link() ->
+start(normal, _) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+stop(_) ->
+    ok.
 
 %%----------------------------------------------------------------------
 %% Function:    init/1
@@ -28,8 +27,8 @@ start_link() ->
 %% Returns:
 %%----------------------------------------------------------------------
 init([]) ->
-    mnesia:start(),
-    {ok, Listen} = gen_tcp:listen(?PORT, [{active, once}, binary]),
+    {ok, PORT} = application:get_env(port),
+    {ok, Listen} = gen_tcp:listen(PORT, [{active, once}, binary]),
     spawn_link(fun() -> spawn_listeners(10) end),
     {ok, {{simple_one_for_one, 60, 3600},
          [{socket,
@@ -85,22 +84,24 @@ login(Username, Pass) ->
 
 %%----------------------------------------------------------------------
 %% Function:    parse_message/2
-%% Description: Parses the first message in a bitstring delimited by ?ASCII_DELIMITER.
-%% Args:        A bitstring delimited by ?ASCII_DELIMITER.
+%% Description: Parses the first message in a bitstring delimited by delimiter.
+%% Args:        A bitstring delimited by delimiter.
 %% Returns:     A tuple containing the first message in the bitstring and
 %%              the rest of the bitstring.
 %%----------------------------------------------------------------------
-parse_message(<<H, T/binary>>, Acc) when H =:= ?ASCII_DELIMITER ->
-    {Acc, T};
 parse_message(<<H, T/binary>>, Acc) when T =:= <<>> ->
     {<<Acc/binary, H>>, <<>>};
 parse_message(<<H, T/binary>>, Acc) ->
-    parse_message(T, <<Acc/binary, H>>).
+    {ok, DELIM} = application:get_env(delimiter),
+    case H =:= DELIM of
+        true  -> {Acc, T};
+        false -> parse_message(T, <<Acc/binary, H>>)
+    end.
 
 %%----------------------------------------------------------------------
 %% Function:    parse_credentials/1
 %% Description: Reads the username and password from a bitstring.
-%% Args:        A bitstring containing name=<username>?ASCII_DELIMITERpass=<password>.
+%% Args:        A bitstring containing name=<username>delimiterpass=<password>.
 %% Returns:     A tuple containing username and password and the rest of the bitstring.
 %%----------------------------------------------------------------------
 parse_credentials(Credentials) ->
@@ -206,10 +207,11 @@ tcp_format_contacts(Contacts) ->
 tcp_format_chat(Chat) ->
     Fun = fun({Receiver, Sender, Body, Timestamp}) ->
         TimestampBin = integer_to_binary(Timestamp),
-        <<"timestamp=", TimestampBin/binary, ?ASCII_DELIMITER,
-          "receiver=", Receiver/binary, ?ASCII_DELIMITER,
-          "sender=", Sender/binary, ?ASCII_DELIMITER,
-          "body=", Body/binary, ?ASCII_DELIMITER>>
+        {ok, DELIM} = application:get_env(delimiter),
+        <<"timestamp=", TimestampBin/binary, DELIM,
+          "receiver=", Receiver/binary, DELIM,
+          "sender=", Sender/binary, DELIM,
+          "body=", Body/binary, DELIM>>
     end,
     Bin = list_to_binary(lists:map(Fun, Chat)),
     <<Bin/binary, "\n">>.
