@@ -3,21 +3,8 @@
 %%%----------------------------------------------------------------------
 
 -module(termchat_sup).
--behaviour(application).
 -behaviour(supervisor).
--export([install/0, start/2, stop/1, init/1, spawn_listeners/1]).
-
-%%----------------------------------------------------------------------
-%% Function:    start/2
-%% Description:
-%% Args:
-%% Returns:
-%% ----------------------------------------------------------------------
-start(normal, _) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-stop(_) ->
-    ok.
+-export([init/1, spawn_listeners/1]).
 
 %%----------------------------------------------------------------------
 %% Function:    init/1
@@ -35,18 +22,6 @@ init([]) ->
           {termchat_serv, start_link, [Listen]},
           temporary, 1000, worker, [?MODULE]}
     ]}}.
-
-%%----------------------------------------------------------------------
-%% Function:    install/1
-%% Description: Installs the necessary mnesia database tables.
-%% Args:        No arguments.
-%% Returns:     ok, or {error, table_exists}
-%%----------------------------------------------------------------------
-install() ->
-    case database:install(node()) of
-        {atomic, ok}                   -> ok;
-        {aborted, {already_exists, _}} -> {error, table_exists}
-    end.
 
 %%----------------------------------------------------------------------
 %% Function:    spawn_listeners/1
