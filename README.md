@@ -4,7 +4,9 @@ Prerequisites:
 * An installation of the erlang interpreter
 
 Usage:
+* Compile with erl -make
 * Startup erl
-* Compile termchat.erl with c(termchat)
 * Install the database with termchat:install()
-* Start the server with termchat:start_link()
+* Start the server:
+    * application:start(mnesia)
+    * application:start(termchat)
