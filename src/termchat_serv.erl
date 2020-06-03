@@ -1,74 +1,66 @@
-%%%----------------------------------------------------------------------
-%%%
-%%%----------------------------------------------------------------------
-
--module(termchat).
--behaviour(application).
--behaviour(supervisor).
--export([install/0, start/2, stop/1, init/1, listen/1, read_chat/1]).
+-module(termchat_serv).
+-behaviour(gen_server).
+-export([start_link/1, init/1, handle_call/3, handle_cast/2, handle_info/2]).
 
 %%----------------------------------------------------------------------
-%% Function:    start/2
-%% Description:
-%% Args:
-%% Returns:
-%% ----------------------------------------------------------------------
-start(normal, _) ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-stop(_) ->
-    ok.
-
-%%----------------------------------------------------------------------
-%% Function:    init/1
-%% Description: Starts the mnesia database and opens a tcp socket.
-%%              Starts the workers.
-%% Args:        No arguments.
-%% Returns:
-%%----------------------------------------------------------------------
-init([]) ->
-    {ok, PORT} = application:get_env(port),
-    {ok, Listen} = gen_tcp:listen(PORT, [{active, once}, binary]),
-    spawn_link(fun() -> spawn_listeners(10) end),
-    {ok, {{simple_one_for_one, 60, 3600},
-         [{socket,
-          {?MODULE, listen, [Listen]},
-          temporary, 1000, worker, [?MODULE]}
-    ]}}.
-
-%%----------------------------------------------------------------------
-%% Function:    install/1
-%% Description: Installs the necessary mnesia database tables.
-%% Args:        No arguments.
-%% Returns:     ok, or {error, table_exists}
-%%----------------------------------------------------------------------
-install() ->
-    case database:install(node()) of
-        {atomic, ok}                   -> ok;
-        {aborted, {already_exists, _}} -> {error, table_exists}
-    end.
-
-%%----------------------------------------------------------------------
-%% Function:    spawn_listeners/1
-%% Description: Spawns N listeners, ready to accept a connection on a socket.
-%% Args:        The number of listeners.
-%% Returns:     ok.
-%% ----------------------------------------------------------------------
-spawn_listeners(N) ->
-    [supervisor:start_child(?MODULE, []) || _ <- lists:seq(1, N)],
-    ok.
-
-%%----------------------------------------------------------------------
-%% Function:    listen/1
+%% Function:    start_link/1
 %% Description: Creates a listener socket, calls the read socket procedure and
-%%              closes the socket.
-%% Args:        An opened tcp socket.
+%%              spawns a new worker when done.
+%% Args:        An open tcp socket.
 %% Returns:
 %%----------------------------------------------------------------------
-listen(Listen) ->
-    {ok, Socket} = gen_tcp:accept(Listen),
-    read_socket(Socket),
-    spawn_link(fun() -> spawn_listeners(1) end).
+start_link(Socket) ->
+    gen_server:start_link(?MODULE, Socket, []).
+
+init(Socket) ->
+    gen_server:cast(self(), accept),
+    {ok, Socket}.
+
+handle_call(_, _, State) ->
+    {noreply, State}.
+
+handle_cast(accept, ListenSocket) ->
+    {ok, AcceptSocket} = gen_tcp:accept(ListenSocket),
+    termchat_sup:spawn_listeners(1),
+    {noreply, AcceptSocket}.
+
+handle_info({tcp, Socket, <<"quit:", _/binary>>}, Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    gen_tcp:send(Socket, "quit\n"),
+    {stop, normal, Socket};
+
+handle_info({tcp, Socket, <<"send:", Message/binary>>}, Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    case save_message(Message) of
+        ok                           -> gen_tcp:send(Socket, "message_sent\n");
+        {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n")
+    end,
+    {noreply, Socket};
+
+handle_info({tcp, Socket, <<"contacts:", Credentials/binary>>}, Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    case read_contacts(Credentials) of
+        {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
+        Contacts                     -> gen_tcp:send(Socket, tcp_format_contacts(Contacts))
+    end,
+    {noreply, Socket};
+
+handle_info({tcp, Socket, <<"read:", Packet/binary>>}, Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    case read_chat(Packet) of
+        {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
+        Chat                         -> gen_tcp:send(Socket, tcp_format_chat(Chat))
+    end,
+    {noreply, Socket};
+
+handle_info({tcp, Socket, <<"signup:", Credentials/binary>>}, Socket) ->
+    inet:setopts(Socket, [{active, once}]),
+    {Name, Pass, _} = parse_credentials(Credentials),
+    case create_account(Name, Pass) of
+        ok -> gen_tcp:send(Socket, "account_created\n");
+        _  -> gen_tcp:send(Socket, "username_in_use\n")
+    end,
+    {noreply, Socket}.
 
 %%----------------------------------------------------------------------
 %% Function:    login/2
@@ -215,46 +207,3 @@ tcp_format_chat(Chat) ->
     end,
     Bin = list_to_binary(lists:map(Fun, Chat)),
     <<Bin/binary, "\n">>.
-
-%%----------------------------------------------------------------------
-%% Function:    read_socket/1
-%% Description:
-%% Args:        The socket to read from.
-%% Returns:     ok.
-%%----------------------------------------------------------------------
-read_socket(Socket) ->
-    inet:setopts(Socket, [{active, once}]),
-    receive
-        {tcp, Socket, <<"quit:", _/binary>>} ->
-            gen_tcp:send(Socket, "quit\n"),
-            ok;
-
-        {tcp, Socket, <<"send:", Message/binary>>} ->
-            case save_message(Message) of
-                ok                           -> gen_tcp:send(Socket, "message_sent\n");
-                {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n")
-            end,
-            read_socket(Socket);
-
-        {tcp, Socket, <<"contacts:", Credentials/binary>>} ->
-            case read_contacts(Credentials) of
-                {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
-                Contacts                     -> gen_tcp:send(Socket, tcp_format_contacts(Contacts))
-            end,
-            read_socket(Socket);
-
-        {tcp, Socket, <<"read:", Packet/binary>>} ->
-            case read_chat(Packet) of
-                {error, invalid_credentials} -> gen_tcp:send(Socket, "invalid_credentials\n");
-                Chat                         -> gen_tcp:send(Socket, tcp_format_chat(Chat))
-            end,
-            read_socket(Socket);
-
-        {tcp, Socket, <<"signup:", Credentials/binary>>} ->
-            {Name, Pass, _} = parse_credentials(Credentials),
-            case create_account(Name, Pass) of
-                ok -> gen_tcp:send(Socket, "account_created\n");
-                _  -> gen_tcp:send(Socket, "username_in_use\n")
-            end,
-            read_socket(Socket)
-    end.
