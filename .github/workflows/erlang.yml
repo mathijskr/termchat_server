@@ -21,3 +21,7 @@ jobs:
       run: rebar3 compile
     - name: Release
       run: rebar3 as prod tar
+    - name: Upload release
+      uses: actions/upload-artifact@v2
+      with:
+        path: /__w/termchat_server/termchat_server/_build/prod/rel/termchat/*.tar.gz
