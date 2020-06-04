@@ -1,2 +1,5 @@
 *.beam
+_build
+rebar.lock
 Mnesia.nonode@nohost
+db

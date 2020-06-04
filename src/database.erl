@@ -18,8 +18,10 @@
 %% Returns:     ok, or {aborted, {already_exists, <table name>}}
 %%----------------------------------------------------------------------
 install(Node) ->
+    application:stop(mnesia),
+    application:set_env(mnesia, dir, "./db"),
     mnesia:create_schema([Node]),
-    mnesia:start(),
+    application:start(mnesia),
     mnesia:create_table(termchat_user,
     [{attributes, record_info(fields, termchat_user)},
      {disc_copies,[Node]},

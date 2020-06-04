@@ -1,7 +1,7 @@
--module(termchat).
+-module(termchat_app).
 -behaviour(application).
 
--export([install/0, start/2, stop/1]).
+-export([try_install/0, start/2, stop/1]).
 
 %%----------------------------------------------------------------------
 %% Function:    start/2
@@ -10,9 +10,11 @@
 %% Returns:
 %% ----------------------------------------------------------------------
 start(normal, _) ->
+    {ok, _} = try_install(),
     supervisor:start_link({local, termchat_sup}, termchat_sup, []).
 
 stop(_) ->
+    init:stop(),
     ok.
 
 %%----------------------------------------------------------------------
@@ -21,8 +23,8 @@ stop(_) ->
 %% Args:        No arguments.
 %% Returns:     ok, or {error, table_exists}
 %%----------------------------------------------------------------------
-install() ->
+try_install() ->
     case database:install(node()) of
-        {atomic, ok}                   -> ok;
-        {aborted, {already_exists, _}} -> {error, table_exists}
+        {atomic, ok}                   -> {ok, db_created};
+        {aborted, {already_exists, _}} -> {ok, already_exists}
     end.
