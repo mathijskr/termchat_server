@@ -1,3 +1,4 @@
+![Erlang CI](https://github.com/mathijskr/termchat_server/workflows/Erlang%20CI/badge.svg?branch=release)
 # termchat_server
 
 ## Prerequisites:
