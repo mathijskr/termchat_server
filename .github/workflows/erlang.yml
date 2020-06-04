@@ -20,4 +20,4 @@ jobs:
     - name: Compile
       run: rebar3 compile
     - name: Release
-      run: rebar3 release
+      run: rebar3 as prod tar
