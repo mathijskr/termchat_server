@@ -1,7 +1,8 @@
 # termchat_server
 
 ## Prerequisites:
-* An installation of the erlang interpreter
+* Erlang
+* Rebar3
 
 ## Usage:
 * Compile with rebar3 compile
