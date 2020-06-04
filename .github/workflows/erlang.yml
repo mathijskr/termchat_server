@@ -24,4 +24,5 @@ jobs:
     - name: Upload release
       uses: actions/upload-artifact@v2
       with:
+        name: release
         path: /__w/termchat_server/termchat_server/_build/prod/rel/termchat/*.tar.gz
