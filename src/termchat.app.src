@@ -4,10 +4,11 @@
   {modules, [termchat_app, termchat_sup, termchat_serv, database]},
   {registered, [termchat]},
   {mod, {termchat_app, []}},
-  {applications, [stdlib, kernel, mnesia]},
+  {applications, [stdlib, kernel, mnesia, crypto, bcrypt]},
   {env,
    [{port, 31031},
     {delimiter, 0},
-    {nworkers, 10}
+    {nworkers, 10},
+    {salt_workfactor, 13}
    ]}
  ]}.

@@ -69,7 +69,9 @@ handle_info({tcp, Socket, <<"signup:", Credentials/binary>>}, Socket) ->
 %% Returns:     ok, or undefined
 %%----------------------------------------------------------------------
 login(Username, Pass) ->
-    case database:get_password(Username) =:= Pass of
+    OriginalHash = database:get_password(Username),
+    {ok, CheckHash} = bcrypt:hashpw(Pass, OriginalHash),
+    case CheckHash =:= OriginalHash of
         true  -> ok;
         false -> undefined
     end.
@@ -151,7 +153,11 @@ save_message(Message) ->
 %%----------------------------------------------------------------------
 create_account(Name, Pass) ->
     case database:get_password(Name) of
-        {error, unknown_user} -> database:insert_user(Name, Pass);
+        {error, unknown_user} ->
+            {ok, Workfactor} = application:get_env(salt_workfactor),
+            {ok, Salt} = bcrypt:gen_salt(Workfactor),
+            {ok, Hash} = bcrypt:hashpw(Pass, Salt),
+            database:insert_user(Name, Hash);
         _                     -> {error, user_exists}
     end.
 
