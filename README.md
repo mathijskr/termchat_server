@@ -12,4 +12,4 @@
 ## Configuration:
 The configuration of the server can be modified in ebin/termchat.app.
 * The number of concurrent listeners can be set by changing "nworkers"
-* The port on which te server listen can be set by changing "port"
+* The port on which the server listens can be set by changing "port"
